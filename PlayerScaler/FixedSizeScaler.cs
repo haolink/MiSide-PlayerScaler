@@ -1,4 +1,5 @@
-﻿using System;
+﻿using AsmResolver.IO;
+using System;
 using UnityEngine;
 
 
@@ -14,8 +15,13 @@ public class FixedSizeScaler : BaseScaler
 
     private PlayerScaler _mainPlugin;
 
+    /// <summary>
+    /// Initialise Fixed Scaler.
+    /// </summary>
+    /// <param name="_plugin">Main Plugin code.</param>
     public FixedSizeScaler(PlayerScaler _plugin) 
     { 
+        // Initialise variables
         this.playerScale = 1.0f;
         this.mitaScale = 1.0f;
 
@@ -23,6 +29,7 @@ public class FixedSizeScaler : BaseScaler
 
         this.dataLastUpdate = null;
 
+        // Read configuration.
         bool restoreScaleOverruled = false;
 
         if (this._mainPlugin.ConfigData != null)
@@ -33,6 +40,7 @@ public class FixedSizeScaler : BaseScaler
                 float? playerBaseScale = this._mainPlugin.ConfigData.Scales.PlayerScale;
                 float? playerRestoreScale = this._mainPlugin.ConfigData.Scales.PlayerRestoreScale;
 
+                // Overrule base variables if configuration contains data.
                 if (mitaBaseScale != null)
                 {
                     this.mitaScale = mitaBaseScale.Value;
@@ -55,12 +63,16 @@ public class FixedSizeScaler : BaseScaler
             }
         }
 
+        // Only set this if it hasn't been read via the configuration file.
         if (!restoreScaleOverruled)
         {
             this.lastKnownPlayerScale = this.playerScale;
         }        
     }
 
+    /// <summary>
+    /// Save at the next possible moment.
+    /// </summary>
     private void MarkForSaving()
     {
         if (this.dataLastUpdate == null)
@@ -69,6 +81,11 @@ public class FixedSizeScaler : BaseScaler
         }
     }
 
+    /// <summary>
+    /// In Fixed mode we only change the internal Mita scale variable, actual scaling happens in Update().
+    /// </summary>
+    /// <param name="fixedScale"></param>
+    /// <param name="scaleFactor"></param>
     public override void ResizeMita(float? fixedScale, float? scaleFactor)
     {
         if (fixedScale != null)
@@ -85,6 +102,11 @@ public class FixedSizeScaler : BaseScaler
         Debug.Log($"Mita scale fixed at: {this.mitaScale}");
     }
 
+    /// <summary>
+    /// In Fixed mode we only change the internal player scale variables, actual scaling happens in Update().
+    /// </summary>
+    /// <param name="fixedScale"></param>
+    /// <param name="scaleFactor"></param>
     public override void ResizePlayer(float? fixedScale, float? scaleFactor)
     {
         float p = this.playerScale;
@@ -110,6 +132,9 @@ public class FixedSizeScaler : BaseScaler
         Debug.Log($"Player scale fixed at: {this.playerScale}");
     }
 
+    /// <summary>
+    /// Saving settings.
+    /// </summary>
     public void Save()
     {
         if (this._mainPlugin.ConfigData == null)
@@ -135,8 +160,12 @@ public class FixedSizeScaler : BaseScaler
         this._mainPlugin.SaveConfiguration();
     }
 
+    /// <summary>
+    /// Updates scale in real time.
+    /// </summary>
     public override void Update()
     {
+        // Consider saving
         if (this.dataLastUpdate != null)
         {
             if ((DateTime.Now - this.dataLastUpdate) >= TimeSpan.FromSeconds(this._afterScaleSaveTimeout))
@@ -146,40 +175,48 @@ public class FixedSizeScaler : BaseScaler
             }
         }
 
+        // Does a player exist?
         Transform? t = GetPlayerTransform(true);
 
+        // No? Well, dang.
         if (t != null)
         {
             if (t.localScale.x != this.playerScale)
             {
                 t.localScale = new Vector3(this.playerScale, this.playerScale, this.playerScale);
             }
-        }
 
-
-        MitaPerson[] mitas = GameObject.FindObjectsOfType<MitaPerson>().ToArray();
-        foreach (MitaPerson mita in mitas)
-        {
-            Animator subAnimator = mita.gameObject.GetComponentInChildren<Animator>();
-            if (subAnimator == null)
+            // Are there extra player armatures (door event in Mila's sub quest).
+            Transform[] doorQuestPlayers = this.FindPlayerDoorGlitchTransforms();
+            foreach (Transform dq in doorQuestPlayers)
             {
-                continue;
-            }
-
-            if (!subAnimator.gameObject.active)
-            {
-                continue;
-            }
-
-            Transform mitaTransform = subAnimator.gameObject.transform;
-
-            if (mitaTransform != null)
-            {
-                if (mitaTransform.localScale.x != this.mitaScale)
+                if (dq.localScale.x != this.playerScale)
                 {
-                    mitaTransform.localScale = new Vector3(this.mitaScale, this.mitaScale, this.mitaScale);
+                    dq.localScale = new Vector3(this.playerScale, this.playerScale, this.playerScale);
                 }
             }
+        }
+
+        Location14_PlayerQuest[] boredPlayerAtHome = GameObject.FindObjectsOfType<Location14_PlayerQuest>().ToArray();
+        foreach (Location14_PlayerQuest pq in boredPlayerAtHome)
+        {
+            if (pq.gameObject.transform.localScale.x != this.playerScale)
+            {
+                pq.gameObject.transform.localScale = new Vector3(this.playerScale, this.playerScale, this.playerScale);
+            }            
+        }
+
+        // Search for all mitas.
+        Transform[] mitaTransforms = this.FindMitas();        
+        foreach (Transform mitaTransform in mitaTransforms)
+        {        
+            // Scale them accordingly.
+            if (mitaTransform.localScale.x != this.mitaScale)
+            {
+                mitaTransform.localScale = new Vector3(this.mitaScale, this.mitaScale, this.mitaScale);
+
+                this.ScaleMilaGlasses(mitaTransform, this.mitaScale);
+            }            
         }
     }
 }
