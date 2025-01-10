@@ -9,17 +9,23 @@ public class FixedSizeScaler : BaseScaler
     private float lastKnownPlayerScale;
     private float mitaScale;
 
+    private bool collidersEnabled;
+    private bool collidersToggled = false; //If true, will force update all colliders in the next Update() cycle
+
     private DateTime? dataLastUpdate = null;
 
     private int _afterScaleSaveTimeout = 10;
 
     private PlayerScaler _mainPlugin;
 
+    public int offCycleUpdate = 0;
+    public int offCycleUpdateInterval = 30;
+
     /// <summary>
     /// Initialise Fixed Scaler.
     /// </summary>
     /// <param name="_plugin">Main Plugin code.</param>
-    public FixedSizeScaler(PlayerScaler _plugin) 
+    public FixedSizeScaler(bool includeChibiMita, PlayerScaler _plugin) : base(includeChibiMita)
     { 
         // Initialise variables
         this.playerScale = 1.0f;
@@ -29,45 +35,14 @@ public class FixedSizeScaler : BaseScaler
 
         this.dataLastUpdate = null;
 
-        // Read configuration.
-        bool restoreScaleOverruled = false;
+        this.mitaScale = this._mainPlugin.ConfigData.Scales.MitaScale;
+        this.playerScale = this._mainPlugin.ConfigData.Scales.PlayerScale;
+        this.lastKnownPlayerScale = this._mainPlugin.ConfigData.Scales.PlayerRestoreScale;
 
-        if (this._mainPlugin.ConfigData != null)
-        {
-            if (this._mainPlugin.ConfigData.Scales != null)
-            {
-                float? mitaBaseScale = this._mainPlugin.ConfigData.Scales.MitaScale;
-                float? playerBaseScale = this._mainPlugin.ConfigData.Scales.PlayerScale;
-                float? playerRestoreScale = this._mainPlugin.ConfigData.Scales.PlayerRestoreScale;
+        this.collidersEnabled = true;
+        this.collidersToggled = false;
 
-                // Overrule base variables if configuration contains data.
-                if (mitaBaseScale != null)
-                {
-                    this.mitaScale = mitaBaseScale.Value;
-                }
-                if (playerBaseScale != null)
-                {
-                    this.playerScale = Mathf.Clamp(playerBaseScale.Value, 0.1f, 1.0f);
-                }
-                if (playerRestoreScale != null)
-                {
-                    this.lastKnownPlayerScale = Mathf.Clamp(playerRestoreScale.Value, 0.1f, 1.0f);
-                    restoreScaleOverruled = true;
-                }
-            }
-            
-            if (this._mainPlugin.ConfigData.Configuration != null && this._mainPlugin.ConfigData.Configuration.AfterScaleSaveTimeout != null) 
-            {
-                this._afterScaleSaveTimeout = this._mainPlugin.ConfigData.Configuration.AfterScaleSaveTimeout.Value;
-                this._afterScaleSaveTimeout = Math.Clamp(this._afterScaleSaveTimeout, 2, 60);
-            }
-        }
-
-        // Only set this if it hasn't been read via the configuration file.
-        if (!restoreScaleOverruled)
-        {
-            this.lastKnownPlayerScale = this.playerScale;
-        }        
+        this._afterScaleSaveTimeout = this._mainPlugin.ConfigData.Configuration.AfterScaleSaveTimeout;
     }
 
     /// <summary>
@@ -100,6 +75,17 @@ public class FixedSizeScaler : BaseScaler
         }
 
         Debug.Log($"Mita scale fixed at: {this.mitaScale}");
+    }
+
+    /// <summary>
+    /// Toggles Mita colliders.
+    /// </summary>
+    public override void ToggleColliders()
+    {
+        this.collidersEnabled = !this.collidersEnabled;
+        this.collidersToggled = true;
+
+        Debug.Log("Collider setting set to: " + (this.collidersEnabled ? "On" : "Off"));
     }
 
     /// <summary>
@@ -137,24 +123,12 @@ public class FixedSizeScaler : BaseScaler
     /// </summary>
     public void Save()
     {
-        if (this._mainPlugin.ConfigData == null)
-        {
-            this._mainPlugin.ConfigData = new PlayerScaler.ConfigurationFile();
-        }
-        if (this._mainPlugin.ConfigData.Scales == null)
-        {
-            this._mainPlugin.ConfigData.Scales = new PlayerScaler.ConfigurationFile.ScalesType();
-        }
-
         this._mainPlugin.ConfigData.Scales.MitaScale = this.mitaScale;
         this._mainPlugin.ConfigData.Scales.PlayerScale = this.playerScale;
         this._mainPlugin.ConfigData.Scales.PlayerRestoreScale = this.lastKnownPlayerScale;
 
-        if (this._mainPlugin.ConfigData.Configuration == null)
-        {
-            this._mainPlugin.ConfigData.Configuration = new PlayerScaler.ConfigurationFile.ConfigurationType();
-        }
         this._mainPlugin.ConfigData.Configuration.AfterScaleSaveTimeout = this._afterScaleSaveTimeout;
+        this._mainPlugin.ConfigData.Configuration.IncludeChibiMita = this.IncludeChibiMita;
 
 
         this._mainPlugin.SaveConfiguration();
@@ -180,11 +154,11 @@ public class FixedSizeScaler : BaseScaler
 
         // No? Well, dang.
         if (t != null)
-        {
+        {            
             if (t.localScale.x != this.playerScale)
             {
-                t.localScale = new Vector3(this.playerScale, this.playerScale, this.playerScale);
-            }
+                t.localScale = new Vector3(this.playerScale, this.playerScale, this.playerScale);                
+            }            
 
             // Are there extra player armatures (door event in Mila's sub quest).
             Transform[] doorQuestPlayers = this.FindPlayerDoorGlitchTransforms();
@@ -195,6 +169,12 @@ public class FixedSizeScaler : BaseScaler
                     dq.localScale = new Vector3(this.playerScale, this.playerScale, this.playerScale);
                 }
             }
+        }
+
+        WorldPlayer wp = GameObject.FindFirstObjectByType<WorldPlayer>();
+        if (wp != null)
+        {
+            wp.speed = this.playerScale;
         }
 
         Location14_PlayerQuest[] boredPlayerAtHome = GameObject.FindObjectsOfType<Location14_PlayerQuest>().ToArray();
@@ -209,14 +189,33 @@ public class FixedSizeScaler : BaseScaler
         // Search for all mitas.
         Transform[] mitaTransforms = this.FindMitas();        
         foreach (Transform mitaTransform in mitaTransforms)
-        {        
-            // Scale them accordingly.
-            if (mitaTransform.localScale.x != this.mitaScale)
+        {
+            bool requiredAdjustment = this.SetTransformScale(mitaTransform, this.mitaScale);
+            if (requiredAdjustment)
             {
-                mitaTransform.localScale = new Vector3(this.mitaScale, this.mitaScale, this.mitaScale);
-
                 this.ScaleMilaGlasses(mitaTransform, this.mitaScale);
-            }            
+            }
+
+            // Update the colliders if required.
+            if (requiredAdjustment || this.collidersToggled)
+            {
+                if (mitaTransform.gameObject.TryGetComponent<CapsuleCollider>(out CapsuleCollider collider))
+                {
+                    collider.enabled = this.collidersEnabled;
+                }
+            }
+
+            // this makes sure Crazy Mita glasses are scaled properly when she puts them on. This check runs only in intervals.
+            if (this.offCycleUpdate == 0)             
+            {
+                this.ScaleMitaAccessories(mitaTransform);
+            }
+        }
+
+        this.offCycleUpdate++;
+        if (this.offCycleUpdate >= this.offCycleUpdateInterval)
+        {
+            this.offCycleUpdate = 0;
         }
     }
 }

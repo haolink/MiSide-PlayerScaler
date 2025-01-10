@@ -5,24 +5,24 @@ public class DynamicScaler : BaseScaler
 {
     private float lastKnownPlayerScale;    
 
-    public DynamicScaler()
+    public DynamicScaler(bool includeChibiMita) : base(includeChibiMita)
     {
         this.lastKnownPlayerScale = 1.0f;
     }
 
-    public override void ResizeMita(float? fixedScale, float? scaleFactor)
+    private Transform? GetClosestMita()
     {
         Transform? playerTransform = GetPlayerTransform();
         if (playerTransform == null)
         {
-            return;
+            return null;
         }
 
         MitaPerson[] mitas = GameObject.FindObjectsOfType<MitaPerson>().ToArray();
         if (mitas.Length == 0)
         {
             Debug.LogWarning($"No Mitas found");
-            return;
+            return null;
         }
 
         float dist = float.MaxValue;
@@ -51,13 +51,19 @@ public class DynamicScaler : BaseScaler
             }
         }
 
+        return foundMita;
+    }
+
+    public override void ResizeMita(float? fixedScale, float? scaleFactor)
+    {
+        Transform? foundMita = GetClosestMita();
+
         if (foundMita == null)
         {
             Debug.LogWarning($"Mita transforms not available.");
             return;
         }
 
-        float s = playerTransform.localScale.x;
         float m = foundMita.localScale.x;
 
         if (fixedScale != null)
@@ -70,7 +76,27 @@ public class DynamicScaler : BaseScaler
         }
 
         Debug.Log($"Scale for closest Mita: " + m.ToString());
-        foundMita.localScale = new Vector3(m, m, m);
+
+        if (this.SetTransformScale(foundMita, m))
+        {
+            this.ScaleMilaGlasses(foundMita, m);
+            this.ScaleMitaAccessories(foundMita);
+        }
+    }
+
+    public override void ToggleColliders()
+    {
+        Transform? foundMita = GetClosestMita();        
+
+        if (foundMita != null && foundMita.gameObject.TryGetComponent<CapsuleCollider>(out CapsuleCollider collider))
+        {
+            Debug.Log("Colliders toggled");
+            collider.enabled = !collider.enabled;
+        } 
+        else
+        {
+            Debug.Log("No collider to toggle");
+        }     
     }
 
     public override void ResizePlayer(float? fixedScale, float? scaleFactor)
