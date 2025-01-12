@@ -37,12 +37,20 @@ public abstract class BaseScaler
     protected bool IncludeChibiMita { get; set; }
 
     /// <summary>
-    /// Constructor.
+    /// Should Core Mita be put into consideration for scaling?
     /// </summary>
-    /// <param name="includeChibiMita"></param>
-    public BaseScaler(bool includeChibiMita)
+    protected bool IncludeCoreMita { get; set; }
+
+    /// <summary>
+    /// Should the change of colliders be allowed?
+    /// </summary>
+    protected bool AllowColliderToggling { get; set; }
+    
+    public BaseScaler()
     {
-        IncludeChibiMita = includeChibiMita;
+        this.IncludeChibiMita = PluginConfiguration.ConfigJSON.Configuration.IncludeChibiMita;
+        this.IncludeCoreMita = PluginConfiguration.ConfigJSON.Configuration.IncludeCoreMita;
+        this.AllowColliderToggling = PluginConfiguration.ConfigJSON.Configuration.AllowColliderToggle;
     }
 
     /// <summary>
@@ -189,6 +197,33 @@ public abstract class BaseScaler
                 if (chbMitaTransform != null)
                 {
                     result.Add(chbMitaTransform);
+                }
+            }
+        }
+
+        //Core Mita should the player wishes to include her via configuration.
+        if (this.IncludeCoreMita)
+        {
+            MitaCore[] coreMitas = GameObject.FindObjectsOfType<MitaCore>().ToArray();
+
+            foreach (MitaCore mc in coreMitas)
+            {
+                Animator subAnimator = mc.gameObject.GetComponentInChildren<Animator>();
+                if (subAnimator == null)
+                {
+                    continue;
+                }
+
+                if (!subAnimator.gameObject.active)
+                {
+                    continue;
+                }
+
+                Transform coreMitaTransform = subAnimator.gameObject.transform;
+
+                if (coreMitaTransform != null)
+                {
+                    result.Add(coreMitaTransform);
                 }
             }
         }

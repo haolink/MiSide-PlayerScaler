@@ -9,14 +9,12 @@ public class FixedSizeScaler : BaseScaler
     private float lastKnownPlayerScale;
     private float mitaScale;
 
-    private bool collidersEnabled;
+    public static bool CollidersEnabled;
     private bool collidersToggled = false; //If true, will force update all colliders in the next Update() cycle
 
     private DateTime? dataLastUpdate = null;
 
     private int _afterScaleSaveTimeout = 10;
-
-    private PlayerScaler _mainPlugin;
 
     public int offCycleUpdate = 0;
     public int offCycleUpdateInterval = 30;
@@ -25,24 +23,28 @@ public class FixedSizeScaler : BaseScaler
     /// Initialise Fixed Scaler.
     /// </summary>
     /// <param name="_plugin">Main Plugin code.</param>
-    public FixedSizeScaler(bool includeChibiMita, PlayerScaler _plugin) : base(includeChibiMita)
-    { 
+    public FixedSizeScaler() : base()
+    {
+        // Hook collider watch
+        if (this.AllowColliderToggling)
+        {
+            ColliderEnabledWatcher.HookNativeUnityCollider();
+        }        
+
         // Initialise variables
         this.playerScale = 1.0f;
         this.mitaScale = 1.0f;
 
-        this._mainPlugin = _plugin;
-
         this.dataLastUpdate = null;
 
-        this.mitaScale = this._mainPlugin.ConfigData.Scales.MitaScale;
-        this.playerScale = this._mainPlugin.ConfigData.Scales.PlayerScale;
-        this.lastKnownPlayerScale = this._mainPlugin.ConfigData.Scales.PlayerRestoreScale;
+        this.mitaScale = PluginConfiguration.ConfigJSON.Scales.MitaScale;
+        this.playerScale = PluginConfiguration.ConfigJSON.Scales.PlayerScale;
+        this.lastKnownPlayerScale = PluginConfiguration.ConfigJSON.Scales.PlayerRestoreScale;
 
-        this.collidersEnabled = true;
+        FixedSizeScaler.CollidersEnabled = true;
         this.collidersToggled = false;
 
-        this._afterScaleSaveTimeout = this._mainPlugin.ConfigData.Configuration.AfterScaleSaveTimeout;
+        this._afterScaleSaveTimeout = PluginConfiguration.ConfigJSON.Configuration.AfterScaleSaveTimeout;
     }
 
     /// <summary>
@@ -82,10 +84,13 @@ public class FixedSizeScaler : BaseScaler
     /// </summary>
     public override void ToggleColliders()
     {
-        this.collidersEnabled = !this.collidersEnabled;
-        this.collidersToggled = true;
+        if ( this.AllowColliderToggling )
+        {
+            CollidersEnabled = !CollidersEnabled;
+            this.collidersToggled = true;
 
-        Debug.Log("Collider setting set to: " + (this.collidersEnabled ? "On" : "Off"));
+            Debug.Log("Collider setting set to: " + (CollidersEnabled ? "On" : "Off"));
+        }        
     }
 
     /// <summary>
@@ -123,15 +128,11 @@ public class FixedSizeScaler : BaseScaler
     /// </summary>
     public void Save()
     {
-        this._mainPlugin.ConfigData.Scales.MitaScale = this.mitaScale;
-        this._mainPlugin.ConfigData.Scales.PlayerScale = this.playerScale;
-        this._mainPlugin.ConfigData.Scales.PlayerRestoreScale = this.lastKnownPlayerScale;
-
-        this._mainPlugin.ConfigData.Configuration.AfterScaleSaveTimeout = this._afterScaleSaveTimeout;
-        this._mainPlugin.ConfigData.Configuration.IncludeChibiMita = this.IncludeChibiMita;
-
-
-        this._mainPlugin.SaveConfiguration();
+        PluginConfiguration.ConfigJSON.Scales.MitaScale = this.mitaScale;
+        PluginConfiguration.ConfigJSON.Scales.PlayerScale = this.playerScale;
+        PluginConfiguration.ConfigJSON.Scales.PlayerRestoreScale = this.lastKnownPlayerScale;
+       
+        PluginConfiguration.SaveConfiguration();
     }
 
     /// <summary>
@@ -190,19 +191,23 @@ public class FixedSizeScaler : BaseScaler
         Transform[] mitaTransforms = this.FindMitas();        
         foreach (Transform mitaTransform in mitaTransforms)
         {
+            CapsuleCollider collider = mitaTransform.gameObject.GetComponent<CapsuleCollider>();
+            if (collider != null)
+            {
+                collider.EnsureColliderIsKnown();
+            }
+
             bool requiredAdjustment = this.SetTransformScale(mitaTransform, this.mitaScale);
+
             if (requiredAdjustment)
             {
                 this.ScaleMilaGlasses(mitaTransform, this.mitaScale);
             }
 
             // Update the colliders if required.
-            if (requiredAdjustment || this.collidersToggled)
+            if (this.AllowColliderToggling && collider != null && (requiredAdjustment || this.collidersToggled))
             {
-                if (mitaTransform.gameObject.TryGetComponent<CapsuleCollider>(out CapsuleCollider collider))
-                {
-                    collider.enabled = this.collidersEnabled;
-                }
+                collider.enabled = collider.enabled; //just execute the setter internally                
             }
 
             // this makes sure Crazy Mita glasses are scaled properly when she puts them on. This check runs only in intervals.
@@ -217,5 +222,7 @@ public class FixedSizeScaler : BaseScaler
         {
             this.offCycleUpdate = 0;
         }
+
+        this.collidersToggled = false;
     }
 }

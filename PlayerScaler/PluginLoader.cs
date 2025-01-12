@@ -7,7 +7,7 @@ public static class PluginInfo
 {
 	public const string PLUGIN_GUID = "PlayerScaler";
 	public const string PLUGIN_NAME = "MiSize";
-	public const string PLUGIN_VERSION = "0.9.2";
+	public const string PLUGIN_VERSION = "0.9.3";
 
 	public static PluginLoader Instance;
 	public static string AssetsFolder = Paths.PluginPath + "\\" + PluginInfo.PLUGIN_GUID + "\\Assets";

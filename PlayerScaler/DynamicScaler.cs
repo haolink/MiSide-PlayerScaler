@@ -5,7 +5,7 @@ public class DynamicScaler : BaseScaler
 {
     private float lastKnownPlayerScale;    
 
-    public DynamicScaler(bool includeChibiMita) : base(includeChibiMita)
+    public DynamicScaler() : base()
     {
         this.lastKnownPlayerScale = 1.0f;
     }
@@ -86,6 +86,11 @@ public class DynamicScaler : BaseScaler
 
     public override void ToggleColliders()
     {
+        if (!this.AllowColliderToggling)
+        {
+            return;
+        }
+
         Transform? foundMita = GetClosestMita();        
 
         if (foundMita != null && foundMita.gameObject.TryGetComponent<CapsuleCollider>(out CapsuleCollider collider))
