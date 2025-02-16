@@ -70,6 +70,10 @@ public static class PluginConfiguration
             }
 
             public bool AllowColliderToggle { get; set; } = false;
+
+            public bool IncludePlayerSpeed { get; set; } = false;
+
+            public bool IncludeMitaSpeed { get; set; } = false;
         }
 
         public class ScalesType

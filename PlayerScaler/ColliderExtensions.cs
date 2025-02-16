@@ -1,59 +1,99 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine;
+using Il2CppInterop;
+using Il2CppInterop.Runtime.InteropTypes.Fields;
+using Il2CppInterop.Runtime;
 
 /// <summary>
 /// Stores the capsule collider radius of a model to make sure it isn't forgotten.
 /// </summary>
-public static class ColliderExtensions 
+public static class ColliderExtensions
 {
     internal class ColliderExtensionProperties
     {
         internal bool initialized = false;
         public float initialRadius;
 
+        public bool colliderDefaultEnabled = true;
         public bool colliderKnown = true;
     }
-
-    private static ConditionalWeakTable<CapsuleCollider, ColliderExtensionProperties> _propertyValues = new ConditionalWeakTable<CapsuleCollider, ColliderExtensionProperties>();
+    
+    private static UnityObjectDictionary<Collider, ColliderExtensionProperties> ColliderCollection = null;
+    private static int ReadCounter = 0;
 
     /// <summary>
     /// Reads the settings of.
     /// </summary>
     /// <param name="collider"></param>
     /// <returns></returns>
-    private static ColliderExtensionProperties ReadExtensionSettings(CapsuleCollider collider, bool autoCreate = true)
+    private static bool ReadExtensionSettings(Collider collider, bool autoCreate, out ColliderExtensionProperties properties)
     {
-        ColliderExtensionProperties? cp;
+        properties = null;
+        bool result = false;
+
+        if (ColliderCollection == null)
+        {
+            Debug.Log("No Collection created!");
+            ColliderExtensions.ColliderCollection = new UnityObjectDictionary<Collider, ColliderExtensionProperties>();
+        }
+
+        ReadCounter++;
+        if (ReadCounter % 1000 == 0) 
+        {
+            ColliderExtensions.ColliderCollection.RemoveDestroyed();
+            ReadCounter = 0;
+        }
+
+        ColliderExtensionProperties cp;
 
         if (autoCreate)
         {
-            cp = _propertyValues.GetOrCreateValue(collider);
+            if (ColliderExtensions.ColliderCollection.TryGetValue(collider, out ColliderExtensionProperties props))
+            {
+                cp = props;
+                result = true;
+            }
+            else
+            {                
+                cp = new ColliderExtensionProperties();
+                ColliderExtensions.ColliderCollection.Add(collider, cp);
+            }
         } 
         else
         {
-            if (_propertyValues.TryGetValue(collider, out ColliderExtensionProperties props))
+            if (ColliderExtensions.ColliderCollection.TryGetValue(collider, out ColliderExtensionProperties props))
             {
                 cp = props;
+                result = true;
             } 
             else
             {
-                return null;
+                return false;
             }
         }        
 
         if (!cp.initialized)
         {
             cp.initialized = true;
-            cp.initialRadius = collider.radius;
+            cp.initialRadius = 0.0f;
             cp.colliderKnown = true;
-        }
+            cp.colliderDefaultEnabled = collider.enabled;
+            
+            if (collider.GetIl2CppType().IsAssignableFrom(Il2CppType.From(typeof(CapsuleCollider))))
+            {
+                CapsuleCollider cc = new CapsuleCollider(collider.Pointer);
+                cp.initialRadius = cc.radius;
+            }
+            if (collider.GetIl2CppType().IsAssignableFrom(Il2CppType.From(typeof(SphereCollider))))
+            {
+                SphereCollider sc = new SphereCollider(collider.Pointer);
+                cp.initialRadius = sc.radius;
+            }
+        }         
 
-        return cp;
+        properties = cp;
+        return result;
     }
 
     /// <summary>
@@ -61,11 +101,12 @@ public static class ColliderExtensions
     /// </summary>
     /// <param name="collider"></param>
     /// <returns></returns>
-    public static float GetInitialRadius(this CapsuleCollider collider)
+    public static float GetInitialRadius(this Collider collider)
     {
-        ColliderExtensionProperties cp = ColliderExtensions.ReadExtensionSettings(collider);
+        ColliderExtensionProperties cp = null;
+        ColliderExtensions.ReadExtensionSettings(collider, true, out cp);
 
-        return cp.initialRadius;
+        return (cp == null ? 0.0f:cp.initialRadius);
     }
 
     /// <summary>
@@ -73,11 +114,10 @@ public static class ColliderExtensions
     /// </summary>
     /// <param name="collider"></param>
     /// <returns>Is data stored here - or can game data be used without looking.</returns>
-    public static bool IsColliderFromAMita(this CapsuleCollider collider)
+    public static bool IsColliderFromAMita(this Collider collider)
     {
-        ColliderExtensionProperties? cp = ColliderExtensions.ReadExtensionSettings(collider, false);
-
-        return (cp != null && cp.colliderKnown);
+        ColliderExtensionProperties? cp;
+        return ColliderExtensions.ReadExtensionSettings(collider, false, out cp);        
     }
 
     /// <summary>
@@ -85,9 +125,34 @@ public static class ColliderExtensions
     /// </summary>
     /// <param name="collider"></param>
     /// <returns></returns>
-    public static void EnsureColliderIsKnown(this CapsuleCollider collider)
+    public static bool EnsureColliderIsKnown(this Collider collider)
     {
-        ColliderExtensions.ReadExtensionSettings(collider, true);
+        ColliderExtensionProperties? cp;
+        return ColliderExtensions.ReadExtensionSettings(collider, true, out cp);
+    }
+
+    /// <summary>
+    /// Sets the default value for this collider which the game wishes to use.
+    /// </summary>
+    /// <param name="collider"></param>
+    public static void SetGameDefault(this Collider collider, bool value)
+    {
+        ColliderExtensionProperties? cp = null;
+        if (ColliderExtensions.ReadExtensionSettings(collider, true, out cp))
+        {
+            cp.colliderDefaultEnabled = value;
+        }        
+    }
+
+    /// <summary>
+    /// Gets the default value for this collider which the game wishes to use.
+    /// </summary>
+    /// <param name="collider"></param>
+    public static bool GetGameDefault(this Collider collider)
+    {
+        ColliderExtensionProperties cp = null;
+        ColliderExtensions.ReadExtensionSettings(collider, true, out cp);
+        return cp.colliderDefaultEnabled;
     }
 }
 

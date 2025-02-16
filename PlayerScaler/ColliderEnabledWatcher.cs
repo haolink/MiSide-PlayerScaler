@@ -1,19 +1,31 @@
 ﻿using System;
 using UnityEngine;
 using HarmonyLib;
-using System.Reflection;
-using BepInEx.Configuration;
 
-[HarmonyPatch(typeof(UnityEngine.Collider))]
+[HarmonyPatch(typeof(Collider))]
 public static class ColliderEnabledWatcher
 { 
     /// <summary>
     /// Hooks into native code - Harmony annotations would have hooked the wrapper method.
     /// </summary>
-    public static void HookNativeUnityCollider()
-    {
-        var harmony = new Harmony("org.miside.plugins.playerscale.collider_enable_watch");
-        harmony.PatchAll(typeof(ColliderEnabledWatcher));
+    public static void HookNativeUnityCollider(bool hookCollider = true)
+    {        
+        if ((PluginConfiguration.ConfigJSON.Configuration.AllowColliderToggle && hookCollider) || PluginConfiguration.ConfigJSON.Configuration.IncludePlayerSpeed)
+        {
+            var harmony = new Harmony("org.miside.plugins.playerscale.collider_enable_watch");
+
+            if (PluginConfiguration.ConfigJSON.Configuration.AllowColliderToggle && hookCollider)
+            {
+                harmony.PatchAll(typeof(ColliderEnabledWatcher));
+            }
+
+            //harmony.PatchAll(typeof(MagicaColliderEnabledWatcher));
+
+            if (PluginConfiguration.ConfigJSON.Configuration.IncludePlayerSpeed)
+            {
+                harmony.PatchAll(typeof(PlayerSpeedModder));
+            }            
+        }               
     }
 
     /// <summary>
@@ -23,32 +35,35 @@ public static class ColliderEnabledWatcher
     /// <param name="value"></param>
     /// <returns></returns>
     /// 
-#pragma warning disable IDE0051 // Is called via Harmony patcher - weirdly enough, hooking the property does not work and seems to hook into the wrapper instead.
     [HarmonyPatch("set_enabled")]
     [HarmonyPrefix]
     private static bool OverruleIfRequired(Collider __instance, ref bool value)
-#pragma warning restore IDE0051
     {
         // Suppress or modify the value being set
-        if (__instance is CapsuleCollider && PluginConfiguration.ConfigJSON.Configuration.AllowColliderToggle)
+        
+        if (PluginConfiguration.ConfigJSON.Configuration.AllowColliderToggle)
         {
-            CapsuleCollider cc = ((CapsuleCollider)__instance);
-
-            if (cc.IsColliderFromAMita())
+            Debug.Log($"Setting {value} on {__instance.gameObject.name}");
+            if (__instance.IsColliderFromAMita())
             {
                 bool pluginSetting = FixedSizeScaler.CollidersEnabled;
-                bool input = value;
-                value &= pluginSetting;
-                //Debug.Log($"Attempt to set {input} - plugin master state is {pluginSetting} --> {value}");
-            } 
-            else
-            {
-                Debug.Log($"{__instance.name}: no state");
-            }
+                bool gameInput = value;
+                if ( BaseScaler.ScalerWritesCollider )
+                {
+                    gameInput = __instance.GetGameDefault();
+                }
+                else
+                {
+                    __instance.SetGameDefault(gameInput);
+                }
+                
+                value = gameInput & pluginSetting;
+                Debug.Log($"Is Mita: PS-{pluginSetting} GS-{gameInput} ==> {value}");
+            }             
 
         }        
 
         return true; // Allow original setter
-    }
+    }    
 }
 

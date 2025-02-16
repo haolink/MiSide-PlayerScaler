@@ -1,6 +1,10 @@
 ﻿using AsmResolver.IO;
+using EPOOutline;
+using Il2CppInterop.Runtime;
+using MagicaCloth;
 using System;
 using UnityEngine;
+using VertexFragment;
 
 
 public class FixedSizeScaler : BaseScaler
@@ -26,10 +30,7 @@ public class FixedSizeScaler : BaseScaler
     public FixedSizeScaler() : base()
     {
         // Hook collider watch
-        if (this.AllowColliderToggling)
-        {
-            ColliderEnabledWatcher.HookNativeUnityCollider();
-        }        
+        ColliderEnabledWatcher.HookNativeUnityCollider();
 
         // Initialise variables
         this.playerScale = 1.0f;
@@ -120,6 +121,7 @@ public class FixedSizeScaler : BaseScaler
         }
 
         this.playerScale = p;
+        PlayerSpeedModder.MaxSpeedFactor = this.playerScale;
         Debug.Log($"Player scale fixed at: {this.playerScale}");
     }
 
@@ -138,7 +140,7 @@ public class FixedSizeScaler : BaseScaler
     /// <summary>
     /// Updates scale in real time.
     /// </summary>
-    public override void Update()
+    protected override void InternalUpdate()
     {
         // Consider saving
         if (this.dataLastUpdate != null)
@@ -150,8 +152,15 @@ public class FixedSizeScaler : BaseScaler
             }
         }
 
+        Location20_Arena go = GameObject.FindAnyObjectByType<Location20_Arena>();
+        if (go != null)
+        {
+            go.speedMovePlayer = 30.0f * this.playerScale;
+        }
+
         // Does a player exist?
         Transform? t = GetPlayerTransform(true);
+        //Collider[] playerColliders = null;
 
         // No? Well, dang.
         if (t != null)
@@ -170,6 +179,8 @@ public class FixedSizeScaler : BaseScaler
                     dq.localScale = new Vector3(this.playerScale, this.playerScale, this.playerScale);
                 }
             }
+
+            // playerColliders = this.GetPlayerColliders(t);
         }
 
         WorldPlayer wp = GameObject.FindFirstObjectByType<WorldPlayer>();
@@ -188,26 +199,39 @@ public class FixedSizeScaler : BaseScaler
         }
 
         // Search for all mitas.
-        Transform[] mitaTransforms = this.FindMitas();        
+        Transform[] mitaTransforms = this.FindMitas();
         foreach (Transform mitaTransform in mitaTransforms)
         {
-            CapsuleCollider collider = mitaTransform.gameObject.GetComponent<CapsuleCollider>();
-            if (collider != null)
+            bool requiredAdjustment = this.SetTransformScale(mitaTransform, this.mitaScale, true, PluginConfiguration.ConfigJSON.Configuration.IncludeMitaSpeed);
+
+            List<Collider> colliders = new List<Collider>(this.QuerySubColliders<Collider>(mitaTransform));
+            /*BoxCollider dialogCollider = this.FetchDialogCollider();
+
+            if (dialogCollider != null)
             {
-                collider.EnsureColliderIsKnown();
-            }
+                Debug.Log("Dialog collider has been found!");
+                colliders.Add(dialogCollider);
+            }*/
 
-            bool requiredAdjustment = this.SetTransformScale(mitaTransform, this.mitaScale);
+            // Update the colliders if required.
+            foreach (Collider c in colliders)
+            {
+                /*if (!( (c.GetIl2CppType().IsAssignableFrom(Il2CppType.From(typeof(CapsuleCollider)))) ||
+                       (c.GetIl2CppType().IsAssignableFrom(Il2CppType.From(typeof(SphereCollider))))) )
+                {
+                    continue;
+                }*/
 
+                bool enforceActivation = !c.EnsureColliderIsKnown();
+                if (this.AllowColliderToggling && (requiredAdjustment || this.collidersToggled || enforceActivation))
+                {
+                    c.enabled = c.enabled; // just execute the setter
+                }
+            }            
+            
             if (requiredAdjustment)
             {
                 this.ScaleMilaGlasses(mitaTransform, this.mitaScale);
-            }
-
-            // Update the colliders if required.
-            if (this.AllowColliderToggling && collider != null && (requiredAdjustment || this.collidersToggled))
-            {
-                collider.enabled = collider.enabled; //just execute the setter internally                
             }
 
             // this makes sure Crazy Mita glasses are scaled properly when she puts them on. This check runs only in intervals.

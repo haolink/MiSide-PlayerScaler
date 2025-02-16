@@ -4,6 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.AI;
+using MagicaCloth;
+using EPOOutline;
 
 public abstract class BaseScaler
 {
@@ -21,10 +24,26 @@ public abstract class BaseScaler
     /// <param name="scaleFactor">Or alternative resizes her by a factor.</param>
     public abstract void ResizeMita(float? fixedScale, float? scaleFactor);
 
+    private static bool _scalerWritesCollider = false;
+
+    public static bool ScalerWritesCollider
+    {
+        get { return _scalerWritesCollider; }
+    }
+
     /// <summary>
     /// Hook for Unity's Update method.
     /// </summary>
-    public abstract void Update();
+    public void Update()
+    {
+        _scalerWritesCollider = true;
+
+        this.InternalUpdate();
+
+        _scalerWritesCollider = false;
+    }
+
+    protected abstract void InternalUpdate();
 
     /// <summary>
     /// Enable or disable colliders.
@@ -54,15 +73,65 @@ public abstract class BaseScaler
     }
 
     /// <summary>
+    /// Finds an object and verifies it via a filter.
+    /// </summary>
+    /// <param name="path"></param>
+    /// <param name="mustBeActive"></param>
+    /// <param name="filter"></param>
+    /// <returns></returns>
+    private GameObject? FindObjectByPath(string path, bool mustBeActive = true, Func<GameObject, bool> filter = null) 
+    { 
+        GameObject? obj = GameObject.Find(path);
+        if (obj != null && (!mustBeActive || obj.active)) 
+        { 
+            if (filter != null)
+            {                
+                if (filter.Invoke(obj))
+                {
+                    return obj;
+                }                
+            }
+            else
+            {
+                return obj;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Finds the player Transform.
     /// </summary>
     /// <returns></returns>
     protected Transform? GetPlayerTransform(bool suppressWarnings = false)
     {
-        GameObject? playerObject = GameObject.Find("GameController/Player");
+        string[] paths = new string[]
+        {
+            "GameController/Player",            
+        };
+        GameObject? playerObject = FindObjectByPath("GameController/Player");
+
+        if (playerObject == null) 
+        {
+            playerObject = FindObjectByPath("World/Quests/Quest3 Арена/ArenaGame/PointCenter/PlayerMove/Player", true, (GameObject obj) => {
+                Animator animator = obj.GetComponent<Animator>();
+                if (animator != null)
+                {
+                    if (!animator.enabled && obj.transform.localScale.x != 1.0f)
+                    {
+                        obj.transform.localScale = Vector3.one;
+                    }
+                    return animator.enabled;
+                }
+
+                return false;                
+            });
+        }
+        
 
         if (playerObject == null)
-        {
+        {            
             if (!suppressWarnings)
             {
                 Debug.LogWarning($"Player not found");
@@ -82,6 +151,20 @@ public abstract class BaseScaler
         }
 
         return playerTransform;
+    }
+
+    /// <summary>
+    /// Gets the collider of the player object.
+    /// </summary>
+    /// <returns></returns>
+    protected Collider[] GetPlayerColliders(Transform? transform)
+    {
+        if (transform == null)
+        {
+            return null;
+        }
+
+        return transform.GetComponentsInChildren<Collider>().ToArray();
     }
 
     /// <summary>
@@ -357,31 +440,96 @@ public abstract class BaseScaler
     }
 
     /// <summary>
+    /// Queries the MitaPerson objects - used for Colliders.
+    /// </summary>
+    /// <param name="t"></param>
+    /// <returns></returns>
+    protected T[] QuerySubColliders<T>(Transform t, bool debug = false)
+    {
+        if (debug) Debug.Log("Starting search for " + typeof(T).Name + " on " + t.name);
+        MitaPerson p = t.gameObject.GetComponent<MitaPerson>() ?? t.parent.gameObject.GetComponent<MitaPerson>();
+
+        T[] colliders = null;
+        if (p != null)
+        {
+            if (debug) Debug.Log("Found MitaPerson on " + p.name);
+            colliders = p.gameObject.GetComponentsInChildren<T>().ToArray();
+        }
+
+        if (colliders == null || colliders.Length == 0)
+        {
+            if (t.TryGetComponent<T>(out T coll))
+            {
+                colliders = new T[1] { coll };
+            }
+        }
+
+        if (colliders == null)
+        {
+            colliders = new T[0];
+        }
+
+        if (debug) Debug.Log("Found " + colliders.Length);
+
+        return colliders;
+    }
+
+    /// <summary>
     /// Sets the scale of a transform and potentially includes the collider.
     /// </summary>
     /// <param name="t"></param>
     /// <param name="scale"></param>
     /// <param name="includeCollider"></param>
     /// <returns>True if there was scaling to be done.</returns>
-    protected bool SetTransformScale(Transform t, float scale, bool includeCollider = true)
+    protected bool SetTransformScale(Transform t, float scale, bool includeCollider = true, bool includeSpeed = true)
     {
         if (t.localScale.x != scale)
         {
             t.localScale = new Vector3(scale, scale, scale);
 
-            if (includeCollider && t.gameObject.TryGetComponent<CapsuleCollider>(out CapsuleCollider capsuleCollider))
+            MitaPerson p = t.gameObject.GetComponent<MitaPerson>() ?? t.parent.gameObject.GetComponent<MitaPerson>();
+
+            if (includeCollider)
             {
-                // Shrinks the collider radius so that players don't get pushed away.
+                CapsuleCollider[] capsuleColliders = this.QuerySubColliders<CapsuleCollider>(t);
+                //MagicaCapsuleCollider[] capsuleColliders2 = this.QuerySubColliders<MagicaCapsuleCollider>(t);
+                
+                if (capsuleColliders != null && capsuleColliders.Length > 0)
+                {
+                    foreach (CapsuleCollider capsuleCollider in capsuleColliders)
+                    {
+                        // Shrinks the collider radius so that players don't get pushed away.
 
-                float initialRadius = capsuleCollider.GetInitialRadius();
-                float setRadius = initialRadius / scale;
+                        float initialRadius = capsuleCollider.GetInitialRadius();
+                        float setRadius = initialRadius / scale;
 
-                capsuleCollider.radius = setRadius;
+                        capsuleCollider.radius = setRadius;
+                    }
+                }    
+                /*if (capsuleColliders2 != null && capsuleColliders2.Length > 0)
+                {
+                    foreach (MagicaCapsuleCollider mCapsuleCollider in capsuleColliders2)
+                    {
+                        mCapsuleCollider.StartRadius = mCapsuleCollider.GetInitialStartRadius() / scale;
+                        mCapsuleCollider.EndRadius = mCapsuleCollider.GetInitialEndRadius() / scale;
+                    }
+                }*/
+            }
+
+
+            if (includeSpeed && p != null)
+            {
+                NavMeshAgent nma = t.gameObject.GetComponent<NavMeshAgent>() ?? t.parent.gameObject.GetComponent<NavMeshAgent>();
+                if (nma != null)
+                {
+                    float pnmaSpeed = p.nmaSpeed * scale;
+                    nma.speed = pnmaSpeed * 8.0f;                    
+                }
             }
 
             return true;
         }
 
         return false;
-    }
+    }   
 }

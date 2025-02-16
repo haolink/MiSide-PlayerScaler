@@ -135,6 +135,10 @@
       <HintPath>..\Dependencies\LibCpp2IL.dll</HintPath>   
       <Private>false</Private>   
     </Reference>   
+    <Reference Include="MagicaCloth">
+      <HintPath>..\Dependencies\MagicaCloth.dll</HintPath>
+      <Private>False</Private>
+    </Reference>   
     <Reference Include="Mono.Cecil">   
       <HintPath>..\Dependencies\Mono.Cecil.dll</HintPath>   
       <Private>false</Private>   

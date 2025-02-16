@@ -7,6 +7,7 @@ public class DynamicScaler : BaseScaler
 
     public DynamicScaler() : base()
     {
+        ColliderEnabledWatcher.HookNativeUnityCollider(false);
         this.lastKnownPlayerScale = 1.0f;
     }
 
@@ -77,7 +78,7 @@ public class DynamicScaler : BaseScaler
 
         Debug.Log($"Scale for closest Mita: " + m.ToString());
 
-        if (this.SetTransformScale(foundMita, m))
+        if (this.SetTransformScale(foundMita, m, true, PluginConfiguration.ConfigJSON.Configuration.IncludeMitaSpeed))
         {
             this.ScaleMilaGlasses(foundMita, m);
             this.ScaleMitaAccessories(foundMita);
@@ -128,10 +129,11 @@ public class DynamicScaler : BaseScaler
         }
 
         Debug.Log($"New player scale: " + s.ToString());
+        PlayerSpeedModder.MaxSpeedFactor = s;
         playerTransform.localScale = new Vector3(s, s, s);
     }
 
-    public override void Update()
+    protected override void InternalUpdate()
     {
         // Stub not required.
     }
